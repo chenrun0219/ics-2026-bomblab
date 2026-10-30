@@ -12,6 +12,71 @@
 |phase_6|恢复八项函数指针表和六种操作，按 challenge 提取两个索引，依次计算两次间接调用及中间、末尾变换。|
 |Honor|分析局部对象复制布局，构造 32 字节填充、OPEN 标记和三个整数；三个整数由 Honor challenge 与六关口令生成的 context 共同决定。|
 
+## 本地测试
+
+```bash
+# 实验目录下执行
+make
+make test
+```
+
+```text
+Public tests: 60/60
+Secret public tests: 10/10
+```
+![测试](images/0.png)
+- 非公开 seed 验证  `--seed 43`
+
+### phase_1
+
+```bash
+./defuser --seed 43 --phase 1 | ./bomb --seed 43 --phase 1
+```
+![phase_1](images/1.png)
+
+### phase_2
+
+```bash
+./defuser --seed 43 --phase 2 | ./bomb --seed 43 --phase 2
+```
+
+![phase_2](images/2.png)
+
+### phase_3
+
+```bash
+./defuser --seed 43 --phase 3 | ./bomb --seed 43 --phase 3
+```
+
+![phase_3](images/3.png)
+
+### phase_4
+
+```bash
+./defuser --seed 43 --phase 4 | ./bomb --seed 43 --phase 4
+```
+
+![phase_4](images/4.png)
+
+### phase_5
+
+```bash
+./defuser --seed 43 --phase 5 | ./bomb --seed 43 --phase 5
+
+![phase_5](images/5.png) 
+
+### phase_6
+
+```bash
+./defuser --seed 43 --phase 6 | ./bomb --seed 43 --phase 6
+```
+
+![phase_6](images/6.png)
+
+### Honor
+
+![Honor](images/honor.png)
+
 ## 实现代码+汇编片段
 
 ### 1. phase_1
@@ -71,7 +136,7 @@ int solve_phase_1(uint64_t challenge, char *out, size_t cap) {
   4020e0:	cmp    %eax,-0x14(%rbp)
   4020e3:	sete   %al
 ```
-**由汇编恢复计算关系**
+**推导**
 
 `p1_compute` 把 challenge 的低 32 位存入 `r8d`，右移 32 位后得到高 32 位，右移 16 位后的值则经 `esi` 参与后续调用。实际调用顺序为 `p1_step2 → p1_step0 → p1_step1`。
 
@@ -125,7 +190,7 @@ int solve_phase_2(uint64_t challenge, char *out, size_t cap) {
   40219b:	cmp    $0x6,%rdx
   40219f:	jne    40217a <phase_02+0x8a>
 ```
-**由汇编恢复计算关系**
+**推导**
 
 `shr $0xf`、`add %edx,%edx`、`and $0x1e`、`add $0xc` 依次给出首项：
 
@@ -200,7 +265,7 @@ int solve_phase_3(uint64_t challenge, char *out, size_t cap) {
   40224e:	add    %edi,%eax
   402250:	ret
 ```
-**由汇编恢复计算关系**
+**推导**
 
 `and $0x7,%edi` 和第一个输入比较，说明第一项为 `s=U32(C)&7`。随后分别右移 challenge 3 位和 32 位，再异或得到 `x=U32(C>>3)^U32(C>>32)`。
 
@@ -298,7 +363,7 @@ int solve_phase_4(uint64_t challenge, char *out, size_t cap) {
   4023a6:	xor    %ecx,%eax
   4023a8:	ret
 ```
-**由汇编恢复计算关系**
+**推导**
 
 入口从 challenge 提取 `target=U32(C)&127`，令区间为 `[0,127]`，并计算 `key=U32(C>>7)^U32(C>>32)`。
 
@@ -395,7 +460,7 @@ int solve_phase_5(uint64_t challenge, char *out, size_t cap) {
   4024f4:	cmp    %eax,-0x18(%rbp)
   4024f7:	sete   %al
 ```
-**由汇编恢复计算关系**
+**推导**
 
 `(%rdx)`、`0x4(%rdx)` 和 `0x8(%rdx)` 分别被当作 4 字节 value、4 字节 tag 和 8 字节 next 指针，节点总长 16 字节。读取 `p5_nodes` 和 `p5_heads` 后，将地址换算为节点下标，得到代码中的静态节点表与头下标表。NULL 用下标 12 表示；本题规定的起点与步数不会访问该下标。
 
@@ -473,7 +538,7 @@ int solve_phase_6(uint64_t challenge, char *out, size_t cap) {
   402579:	xor    $0x49b,%eax
   40257e:	ret
 ```
-**由汇编恢复计算关系**
+**推导**
 
 `shr $6` 后与 challenge 高 32 位异或得到初始操作数 `x`。第一次间接调用使用 `C&7` 作为表下标。第二次调用前的 `and $0x38,%ebx` 保留第 3～5 位，得到的是字节偏移，除以每项 8 字节后，其下标是 `(C>>3)&7`。
 
@@ -577,7 +642,7 @@ int solve_secret(uint64_t challenge, uint64_t context, char *out, size_t cap) {
   402638:	xor    $0x6b34,%eax
   40263d:	ret
 ```
-**由汇编恢复布局和计算关系**
+**推导**
 
 `secret_gate` 以 `rbp-0xd0` 为复制起点。长度减去 `0x24` 后按无符号比较不超过 `0x7f`，等价于要求原字符串长度在 `[36,163]`。`secret_copy` 逐字节复制直到并包括 `\00`。
 
@@ -590,7 +655,6 @@ int solve_secret(uint64_t challenge, uint64_t context, char *out, size_t cap) {
 末尾：字符串结束符
 ```
 
-此构造只利用实验要求的局部字段覆盖，不覆盖返回地址。
 
 令 `T=context`，由 `secret_phase` 恢复：
 
@@ -605,71 +669,6 @@ z = y ^ (b+s+0x1c14+(a>>1))
 `and $3` 与第一个整数比较，确定 s；`secret_mix` 右旋 1 位后异或 `0x6b34`，返回值再与 context 派生项异或，得到第二项 y；后续加法和异或得到第三项 z。
 
 context 由公共驱动根据前六关口令生成，求解函数直接使用传入值。最终第七行为 `32个A + OPEN + s y z`，无需在 OPEN 与第一个数字之间额外加空格。
-
-## 本地测试
-
-```bash
-# 实验目录下执行
-make
-make test
-```
-
-```text
-Public tests: 60/60
-Secret public tests: 10/10
-```
-![测试](images/0.png)
-- 非公开 seed 验证  `--seed 43`
-
-### phase_1
-
-```bash
-./defuser --seed 43 --phase 1 | ./bomb --seed 43 --phase 1
-```
-![phase_1](images/1.png)
-
-### phase_2
-
-```bash
-./defuser --seed 43 --phase 2 | ./bomb --seed 43 --phase 2
-```
-
-![phase_2](images/phase2-seed43.png)
-
-### phase_3
-
-```bash
-./defuser --seed 43 --phase 3 | ./bomb --seed 43 --phase 3
-```
-
-![phase_3](images/phase3-seed43.png)
-
-### phase_4
-
-```bash
-./defuser --seed 43 --phase 4 | ./bomb --seed 43 --phase 4
-```
-
-![phase_4](images/4.png)
-
-### phase_5
-
-```bash
-./defuser --seed 43 --phase 5 | ./bomb --seed 43 --phase 5
-
-![phase_5](images/5.png) 
-
-### phase_6
-
-```bash
-./defuser --seed 43 --phase 6 | ./bomb --seed 43 --phase 6
-```
-
-![phase_6](images/6.png)
-
-### Honor
-
-<!-- ![Honor](images/honor.png) -->
 
 
 
